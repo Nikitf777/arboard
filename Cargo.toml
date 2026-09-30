@@ -19,6 +19,9 @@ image-data = [
     "core-graphics",
 ]
 wayland-data-control = ["wl-clipboard-rs"]
+# Access the Android clipboard through Termux's `termux-clipboard-get`/`termux-clipboard-set`
+# helpers. Only has an effect when targeting Android.
+termux = []
 
 # For backwards compat
 core-graphics = ["dep:objc2-core-graphics"]

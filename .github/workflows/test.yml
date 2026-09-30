@@ -65,6 +65,31 @@ jobs:
           cargo update -p windows-sys
           cargo clippy --verbose --all-features -- -D warnings -D clippy::dbg_macro 
 
+  # The Termux backend can't be exercised without a device, but it should at least keep
+  # compiling for Android.
+  clippy-android:
+    needs: rustfmt
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: step-security/setup-rust-toolchain@a8823cd6cdb5668ac7528d7756acfee772bf71809 # v1.16.1
+        with:
+          toolchain: stable
+          components: clippy
+          targets: aarch64-linux-android
+
+      - uses: actions/checkout@9c091bb21b7c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run `cargo clippy` for the Android target with the `termux` feature
+        run: cargo clippy --verbose --target aarch64-linux-android --no-default-features --features termux -- -D warnings -D clippy::dbg_macro
+
+      - name: Run `cargo clippy` for the Android target with all features
+        run: cargo clippy --verbose --target aarch64-linux-android --all-features -- -D warnings -D clippy::dbg_macro
+
   test:
     needs: clippy
     runs-on: ${{ matrix.os }}

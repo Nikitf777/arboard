@@ -66,6 +66,20 @@ pub use platform::SetExtApple;
 ///
 /// This means that attempting operations in parallel has a high likelihood to return an error or
 /// deadlock. As such, it is recommended to avoid creating/operating clipboard objects on >1 thread.
+///
+/// ## Android (Termux)
+///
+/// Android is only supported through Termux, where the clipboard is accessed by running the
+/// `termux-clipboard-get`/`termux-clipboard-set` helpers. It is opt-in, so enable the
+/// `termux` feature to build it.
+///
+/// Each operation shells out to those helpers, which then talk to the Termux:API app. That
+/// means the clipboard is shared with the rest of the device, and Android's restriction on
+/// clipboard access for apps that aren't in the foreground applies: a read may come back
+/// empty and a write may be dropped without an error while that app is backgrounded.
+///
+/// Only plain text is transferable: getting or setting HTML (other than its plain-text
+/// alternative), images, or file lists returns [`Error::ClipboardNotSupported`].
 #[allow(rustdoc::broken_intra_doc_links)]
 pub struct Clipboard {
 	pub(crate) platform: platform::Clipboard,
@@ -277,6 +291,42 @@ mod tests {
 	#[test]
 	fn all_tests() {
 		let _ = env_logger::builder().is_test(true).try_init();
+
+		#[cfg(not(all(target_os = "android", feature = "termux")))]
+		run_all_tests();
+
+		// On Termux the clipboard is reached through a broadcast to the Termux:API app.
+		// That app only sees the change asynchronously, and Android denies clipboard
+		// access to apps that aren't in the foreground, so a single attempt can fail for
+		// reasons that have nothing to do with this crate. Give it a few tries.
+		#[cfg(all(target_os = "android", feature = "termux"))]
+		{
+			const ATTEMPTS: usize = 5;
+
+			for attempt in 1..=ATTEMPTS {
+				// Silence the intermediate panics, the failure that matters is reported below.
+				let hook = std::panic::take_hook();
+				std::panic::set_hook(Box::new(|_| {}));
+				let result = std::panic::catch_unwind(run_all_tests);
+				std::panic::set_hook(hook);
+
+				if result.is_ok() {
+					return;
+				}
+
+				eprintln!("attempt {attempt} of {ATTEMPTS} of the Termux clipboard tests failed");
+				std::thread::sleep(Duration::from_millis(250));
+			}
+
+			panic!("the Termux clipboard tests kept failing");
+		}
+	}
+
+	fn run_all_tests() {
+		// The Android clipboard is a single global resource shared with the rest of the
+		// device, so the platform's own tests must not touch it at the same time.
+		#[cfg(all(target_os = "android", feature = "termux"))]
+		let _clipboard_guard = common::CLIPBOARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 		{
 			let mut ctx = Clipboard::new().unwrap();
 			let text = "some string";
@@ -347,7 +397,14 @@ mod tests {
 
 			ctx.set().html(html, None).unwrap();
 
-			if cfg!(target_os = "macos") {
+			// Termux only carries plain text through the clipboard.
+			if cfg!(all(target_os = "android", feature = "termux")) {
+				match ctx.get_text() {
+					Ok(text) => assert!(text.is_empty()),
+					Err(Error::ContentNotAvailable) => {}
+					Err(e) => panic!("unexpected error: {e}"),
+				};
+			} else if cfg!(target_os = "macos") {
 				// Copying HTML on macOS adds wrapper content to work around
 				// historical platform bugs. We control this wrapper, so we are
 				// able to check that the full user data still appears and at what
@@ -358,6 +415,8 @@ mod tests {
 				assert_eq!(ctx.get().html().unwrap(), html);
 			}
 		}
+		// Termux can only move plain text through the clipboard.
+		#[cfg(not(all(target_os = "android", feature = "termux")))]
 		{
 			let mut ctx = Clipboard::new().unwrap();
 
@@ -371,7 +430,7 @@ mod tests {
 			ctx.set().file_list(paths).unwrap();
 			assert_eq!(ctx.get().file_list().unwrap().as_slice(), paths);
 		}
-		#[cfg(feature = "image-data")]
+		#[cfg(all(feature = "image-data", not(all(target_os = "android", feature = "termux"))))]
 		{
 			let mut ctx = Clipboard::new().unwrap();
 			#[rustfmt::skip]

@@ -8,7 +8,7 @@
 
 This is a cross-platform library for interacting with the clipboard. It allows
 to copy and paste both text and image data in a platform independent way on
-Linux, Mac, and Windows.
+Linux, Mac, Windows, and Android (Termux).
 
 Please note that this is not an official 1Password product. Feature requests will be considered like any other volunteer-based crate.
 
@@ -71,6 +71,37 @@ long-lived data structure (like app context, etc) or utilize `wait` method menti
 app can request the clipboard data later.
 
 We welcome suggestions to improve on the above issues in ways that don't degrade other use cases.
+
+## Android (Termux)
+
+On Android, `arboard` is only supported through [Termux]. There is no display server to
+talk to, so the clipboard is accessed by running the `termux-clipboard-get` and
+`termux-clipboard-set` helpers that come with the `termux-api` package.
+
+Because `target_os = "android"` doesn't necessarily mean Termux, this backend lives behind
+the opt-in `termux` feature; it is only built for Android targets anyway:
+
+```toml
+[dependencies]
+arboard = { version = "3.6", features = ["termux"] }
+```
+
+Requirements:
+- The `termux-api` package must be installed, and its `com.termux.api` app should be
+  installed, since the helpers talk to it.
+
+Only plain text can be transferred: Android's clipboard is not accessible for HTML or
+file lists through this API, so those operations return
+[`ClipboardNotSupported`](https://docs.rs/arboard/latest/arboard/enum.Error.html), and
+setting HTML stores its plain-text alternative (which is what would be pasted).
+Setting an image is not supported either. Clearing the clipboard stores an empty string.
+
+Note that the helpers talk to the Termux:API app, so Android's restrictions on clipboard
+access for apps that aren't in the foreground apply to it: a read may come back empty
+(`ContentNotAvailable`) and a write may be dropped without an error while that app is
+backgrounded.
+
+[Termux]: https://termux.dev/
 
 ## Example
 

@@ -149,12 +149,18 @@ impl ImageData<'_> {
 	}
 }
 
-#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
+#[cfg(any(
+	windows,
+	all(unix, not(any(target_os = "macos", target_os = "android", target_os = "emscripten")))
+))]
 pub(crate) struct ScopeGuard<F: FnOnce()> {
 	callback: Option<F>,
 }
 
-#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
+#[cfg(any(
+	windows,
+	all(unix, not(any(target_os = "macos", target_os = "android", target_os = "emscripten")))
+))]
 impl<F: FnOnce()> ScopeGuard<F> {
 	#[cfg_attr(all(windows, not(feature = "image-data")), allow(dead_code))]
 	pub(crate) fn new(callback: F) -> Self {
@@ -162,7 +168,10 @@ impl<F: FnOnce()> ScopeGuard<F> {
 	}
 }
 
-#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
+#[cfg(any(
+	windows,
+	all(unix, not(any(target_os = "macos", target_os = "android", target_os = "emscripten")))
+))]
 impl<F: FnOnce()> Drop for ScopeGuard<F> {
 	fn drop(&mut self) {
 		if let Some(callback) = self.callback.take() {
@@ -171,8 +180,15 @@ impl<F: FnOnce()> Drop for ScopeGuard<F> {
 	}
 }
 
+/// On platforms where the clipboard is a single global resource that is shared with the
+/// rest of the system, tests that mutate it have to take turns.
+#[cfg(all(test, target_os = "android", feature = "termux"))]
+pub(crate) static CLIPBOARD_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Common trait for sealing platform extension traits.
 pub(crate) mod private {
+	// Termux has no platform-specific extension traits to seal, which leaves this trait unused.
+	#[cfg_attr(all(target_os = "android", feature = "termux"), allow(dead_code, unreachable_pub))]
 	pub trait Sealed {}
 
 	impl Sealed for crate::Get<'_> {}
